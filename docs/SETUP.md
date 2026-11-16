@@ -389,7 +389,9 @@ and it picks up nanoclaw's proxy (`HTTPS_PROXY`) and CA bundle automatically.
 | `summary` | `{"date": "YYYY-MM-DD"}` | Day totals: feeds, mL, minutes, diapers, sleep events, vitals, last feed |
 | `meta` | `{}` | Sheet title, time zone and row counts |
 
-A row is a JSON object keyed by column header (case doesn't matter). Date/Time is `"YYYY-MM-DD HH:mm"`.
+A row is a JSON object keyed by column header (case doesn't matter). Date/Time is `"YYYY-MM-DD HH:mm+HH:MM"`
+(with a UTC offset, or `Z`); the API converts it to the sheet's time zone, and every Date/Time it returns, and every
+Date/Time cell in the sheet, shows the offset, e.g. `2026-11-15 14:20 +08:00`. A value with no offset is read in the sheet's time zone.
 
 ### Worked examples
 
@@ -398,14 +400,14 @@ A row is a JSON object keyed by column header (case doesn't matter). Date/Time i
 python3 /workspace/agent/tools/baby_api.py log '{
   "entries": {
     "journal-log": [{
-      "Date/Time": "2026-11-15 14:20",
+      "Date/Time": "2026-11-15 14:20+08:00",
       "Log": {"feed": "90ml formula in a bottle, she spat up a bit", "poopee": "wet diaper",
               "sleep": null, "vitals": null, "notes": null},
       "Raw log": "Just gave her 90ml formula in a bottle, she spat up a bit. Also a wet diaper"
     }],
-    "feed-log":   [{"Date/Time": "2026-11-15 14:20", "Milk type": "formula", "Format": "bottle",
+    "feed-log":   [{"Date/Time": "2026-11-15 14:20+08:00", "Milk type": "formula", "Format": "bottle",
                     "Volume (mL)": 90, "Remarks": "spat up a bit"}],
-    "poopee-log": [{"Date/Time": "2026-11-15 14:20", "Poo": 0, "Pee": 1}]
+    "poopee-log": [{"Date/Time": "2026-11-15 14:20+08:00", "Poo": 0, "Pee": 1}]
   }
 }'
 ```
@@ -415,14 +417,14 @@ Reply: `✅ 14:20 — bottle, formula, 90 mL (spat up a bit) · wet diaper`
 ```bash
 python3 /workspace/agent/tools/baby_api.py log '{
   "entries": {
-    "journal-log": [{"Date/Time": "2026-11-15 03:00",
+    "journal-log": [{"Date/Time": "2026-11-15 03:00+08:00",
                      "Log": {"feed": "breastfed fifteen minutes at 3am", "poopee": null,
                              "sleep": "slept till 6", "vitals": null, "notes": null},
                      "Raw log": "breastfed fifteen minutes at 3am then she slept till 6"}],
-    "feed-log":  [{"Date/Time": "2026-11-15 03:00", "Milk type": "breast milk", "Format": "breast",
+    "feed-log":  [{"Date/Time": "2026-11-15 03:00+08:00", "Milk type": "breast milk", "Format": "breast",
                    "Duration (min)": 15}],
-    "sleep-log": [{"Date/Time": "2026-11-15 03:15", "Status": "sleep"},
-                  {"Date/Time": "2026-11-15 06:00", "Status": "wake"}]
+    "sleep-log": [{"Date/Time": "2026-11-15 03:15+08:00", "Status": "sleep"},
+                  {"Date/Time": "2026-11-15 06:00+08:00", "Status": "wake"}]
   }
 }'
 ```

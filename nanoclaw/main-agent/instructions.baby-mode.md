@@ -41,7 +41,11 @@ Actions: meta, log, append, tail, query, update, void, summary, status.
 - If the message states a date and/or time ("fed at 3am", "yesterday 10pm"), use it.
 - If it gives a time but no date, use the most recent past occurrence of that time.
 - Otherwise use the time the message was sent.
-- Use the sheet's time zone (from `meta`; normally Asia/Singapore). Format: `YYYY-MM-DD HH:mm`.
+- Times in messages are in your local time zone (the one in your context header).
+- Every Date/Time you send includes its UTC offset: `YYYY-MM-DD HH:mm+HH:MM`, e.g. `2026-11-15 14:20+08:00`.
+  Get the offset for that moment with `date -d '<YYYY-MM-DD HH:mm>' +%:z`, because it can change with daylight saving.
+- The API stores and returns Date/Time in the sheet's time zone, with its offset (e.g. `2026-11-15 14:20 +08:00`).
+  When matching rows for corrections or answering questions, compare instants, not just the HH:mm digits.
 
 ### Workflow for every logging message
 1. Work out the timestamp(s) and parse the message into rows.

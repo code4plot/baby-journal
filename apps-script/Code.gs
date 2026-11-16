@@ -42,7 +42,9 @@
  *   summary   date? (YYYY-MM-DD, default today)    totals for that day
  *
  *   A row is either an object keyed by column header (case-insensitive) or an array
- *   in column order. Date/Time is "YYYY-MM-DD HH:mm" in the spreadsheet's timezone.
+ *   in column order. Date/Time is "YYYY-MM-DD HH:mm+HH:MM" (a UTC offset, or "Z"). The API converts it to the
+ *   spreadsheet's timezone. Without an offset it is read in the spreadsheet's timezone.
+ *   Every Date/Time the API returns carries the offset, and the sheet cells show it too, e.g. "2026-11-15 14:20 +08:00".
  *   journal-log rows also need "Raw log": the user's text, or the voice-note transcript, verbatim.
  *
  *   Columns
@@ -82,8 +84,8 @@ const ENUMS = {
   'Pee':       [0, 1],
 };
 
-const DT_OUT = 'yyyy-MM-dd HH:mm';     // Utilities.formatDate pattern
-const DT_CELL = 'yyyy-mm-dd hh:mm';    // Sheets number format
+const DT_OUT = 'yyyy-MM-dd HH:mm';     // Utilities.formatDate pattern (the offset is added by formatDT_)
+const DT_CELL = 'yyyy-mm-dd hh:mm';    // Sheets number format (cellFormat_ adds the offset as literal text)
 const VOID = 'VOID';
 const MAX_TAIL = 200;
 const MAX_QUERY = 1000;
@@ -174,7 +176,7 @@ function handleAppend_(ss, req) {
   const tab = requireTab_(req.tab);
   const rows = prepareRows_(tab, req.rows, ss.getSpreadsheetTimeZone());
   return withLock_(function () {
-    return writeRows_(ss.getSheetByName(tab), rows);
+    return writeRows_(ss.getSheetByName(tab), rows, ss.getSpreadsheetTimeZone());
   });
 }
 
@@ -192,7 +194,7 @@ function handleLog_(ss, req) {
   if (!prepared.length) throw apiError_('bad_request', '"entries" is empty');
   return withLock_(function () {
     const out = {};
-    prepared.forEach(function (p) { out[p.tab] = writeRows_(ss.getSheetByName(p.tab), p.rows); });
+    prepared.forEach(function (p) { out[p.tab] = writeRows_(ss.getSheetByName(p.tab), p.rows, tz); });
     return out;
   });
 }
@@ -244,7 +246,7 @@ function handleUpdate_(ss, req) {
     }
     const cells = normalizeRow_(tab, input, tz);
     sh.getRange(row, 1, 1, headers.length).setValues([cells]);
-    sh.getRange(row, 1).setNumberFormat(DT_CELL);
+    sh.getRange(row, 1).setNumberFormat(cellFormat_(cells[0], tz));
     return publicRecord_(readRecords_(sh, tab, row, 1, tz)[0]);
   });
 }
@@ -359,10 +361,10 @@ function parseSheetId_(ref) {
   throw apiError_('bad_request', 'Could not find a Google Sheets ID in "sheet"');
 }
 
-function writeRows_(sh, rows) {
+function writeRows_(sh, rows, tz) {
   const start = sh.getLastRow() + 1;
   sh.getRange(start, 1, rows.length, rows[0].length).setValues(rows);
-  sh.getRange(start, 1, rows.length, 1).setNumberFormat(DT_CELL);
+  sh.getRange(start, 1, rows.length, 1).setNumberFormats(rows.map(function (r) { return [cellFormat_(r[0], tz)]; }));
   return { firstRow: start, lastRow: start + rows.length - 1, count: rows.length };
 }
 
@@ -381,7 +383,7 @@ function readRecords_(sh, tab, startRow, numRows, tz) {
     const data = {};
     headers.forEach(function (h, j) {
       const v = vals[j];
-      data[h] = v instanceof Date ? Utilities.formatDate(v, tz, DT_OUT) : v;
+      data[h] = v instanceof Date ? formatDT_(v, tz) : v;
     });
     out.push({
       row: startRow + i,
@@ -471,9 +473,33 @@ function toCell_(h, v, tz) {
 function parseDateTime_(v, tz) {
   if (v instanceof Date) return v;
   const s = String(v).trim().replace('T', ' ');
-  const m = s.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(:\d{2})?$/);
-  if (!m) throw apiError_('bad_request', 'Date/Time must be "YYYY-MM-DD HH:mm", got "' + v + '"');
-  return Utilities.parseDate(m[1] + ' ' + m[2], tz, 'yyyy-MM-dd HH:mm');
+  const m = s.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(?::\d{2})?\s*(Z|[+-]\d{2}:?\d{2})?$/i);
+  if (!m) throw apiError_('bad_request', 'Date/Time must be "YYYY-MM-DD HH:mm+HH:MM", got "' + v + '"');
+  if (!m[3]) return Utilities.parseDate(m[1] + ' ' + m[2], tz, 'yyyy-MM-dd HH:mm');
+  // Explicit offset: read the wall time as UTC, then shift by the offset to get the real instant.
+  const asUtc = Utilities.parseDate(m[1] + ' ' + m[2], 'UTC', 'yyyy-MM-dd HH:mm');
+  let offsetMin = 0;
+  if (m[3].toUpperCase() !== 'Z') {
+    const o = m[3].replace(':', '');
+    offsetMin = (o[0] === '-' ? -1 : 1) * (parseInt(o.slice(1, 3), 10) * 60 + parseInt(o.slice(3, 5), 10));
+  }
+  return new Date(asUtc.getTime() - offsetMin * 60000);
+}
+
+/** UTC offset of tz at instant d, as "+08:00". */
+function offset_(d, tz) {
+  const z = Utilities.formatDate(d, tz, 'Z'); // e.g. +0800
+  return z.slice(0, 3) + ':' + z.slice(3);
+}
+
+/** "2026-11-15 14:20 +08:00": wall time in the sheet's timezone, plus its offset. */
+function formatDT_(d, tz) {
+  return Utilities.formatDate(d, tz, DT_OUT) + ' ' + offset_(d, tz);
+}
+
+/** Sheets number format that shows the cell's date plus its offset as literal text. */
+function cellFormat_(d, tz) {
+  return d instanceof Date ? DT_CELL + ' "' + offset_(d, tz) + '"' : DT_CELL;
 }
 
 /** A date-only bound covers the whole day: start of day for "from", end of day for "to". */
