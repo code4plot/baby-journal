@@ -1,0 +1,19 @@
+# Real API config: holds your Apps Script API key. Never commit it.
+baby_api.json
+!baby_api.example.json
+
+# Backups made during setup
+*.bak
+
+# Python
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Local env files
+.env
+.env.*
